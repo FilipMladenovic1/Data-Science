@@ -1,0 +1,96 @@
+---
+title: "R_Exercise"
+output: html_document
+date: "2024-05-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r load_data}
+# import the data("iris")
+
+iris
+```
+
+```{r scatter_plot}
+# make a scatter plot with x-axis: Sepal.Length and y-axis: Sepal.Width, and the species should be shown in different colors
+
+library(ggplot2)
+
+ggplot(iris, aes(x = Sepal.Length, y = Sepal.Width, color = Species)) +
+  geom_point() +
+  labs(x = "Sepal Length", y = "Sepal Width", color = "Species")
+```
+
+```{r regression_line}
+# add regression line for the previous plot with the whole dataset (regardless of the species)
+
+library(ggplot2)
+
+ggplot(iris, aes(x = Sepal.Length, y = Sepal.Width)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, linetype = "dashed", color = "red") +
+  labs(x = "Sepal Length", y = "Sepal Width")
+```
+```{r pearson_correlation}
+# calculate the Pearson correlation for this plot
+
+correlation <- cor(iris$Sepal.Length, iris$Sepal.Width)
+
+correlation
+```
+
+```{r boxplot}
+# make the boxplot for Petal.Width with 3 species separately in the x-axis in different colors
+
+library(ggplot2)
+
+ggplot(iris, aes(x = Species, y = Petal.Width, fill = Species)) +
+  geom_boxplot() +
+  labs(x = "Species", y = "Petal Width") +
+  scale_fill_manual(values = c("setosa" = "blue", "versicolor" = "green", "virginica" = "red"))
+```
+```{r histogram}
+# make the histogram for Petal.Width with 3 species separately in x-axis in different colors
+
+library(ggplot2)
+
+ggplot(iris, aes(x = Petal.Width)) +
+  geom_histogram(binwidth = 0.2, aes(fill = Species), position = "dodge") +
+  labs(x = "Petal Width", y = "Frequency") +
+  facet_wrap(~Species, scales = "free_x") +
+  scale_fill_manual(values = c("setosa" = "blue", "versicolor" = "green", "virginica" = "red"))
+```
+```{r t-test}
+# run the t-test of Petal.Width between setosa and virginica, and give the conclusion if the width is a statistically significant difference between 2 species
+
+setosa_petal_width <- iris$Petal.Width[iris$Species == "setosa"]
+virginica_petal_width <- iris$Petal.Width[iris$Species == "virginica"]
+
+t_test_result <- t.test(setosa_petal_width, virginica_petal_width)
+
+t_test_result
+
+# Result: Since the p-value is much smaller than 0.05, there is a statistically significant difference in petal width between the setosa and virginica species.
+```
