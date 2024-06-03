@@ -1,0 +1,343 @@
+---
+title: "Data_Clean_&_Statistics"
+output: html_document
+date: "2024-05-31"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r load_data}
+# Loading the data and displaying the head/summary for a quick check.
+
+library(readr)
+
+url_patient_info <- "https://raw.githubusercontent.com/WHPAN0108/BHT-DataScience-S24/main/data_clean/data/patient_info.csv"
+url_date <- "https://raw.githubusercontent.com/WHPAN0108/BHT-DataScience-S24/main/data_clean/data/date.csv"
+
+patient_info <- read_csv(url_patient_info)
+date <- read_csv(url_date)
+
+print(patient_info)
+print(date)
+```
+
+```{r replace_BMI}
+# Replace missing BMI values with the median BMI for the corresponding gender.
+
+library(tidyverse)
+
+# Calculate the median BMI for each gender
+median_bmi_by_sex <- patient_info %>%
+  group_by(Sex) %>%
+  summarize(median_bmi = median(BMI, na.rm = TRUE))
+
+# Display the median BMI values
+print(median_bmi_by_sex)
+
+# Replace missing BMI values with the median BMI of the corresponding gender
+patient_info_clean <- patient_info %>%
+  left_join(median_bmi_by_sex, by = "Sex") %>%
+  mutate(BMI = ifelse(is.na(BMI), median_bmi, BMI)) %>%
+  select(-median_bmi)
+
+# Display the cleaned data
+row_with_missing_bmi <- which(is.na(patient_info_clean$BMI))
+
+# Check the replaced values
+patient_info_clean[94, ]
+patient_info_clean[264, ]
+patient_info_clean[369, ]
+print(patient_info_clean)
+```
+
+```{r sanity_check}
+# Perform a sanity check on all columns in both files, and remove any samples that do not pass.
+
+library(tidyverse)
+
+# Sanity check criteria for patient_info
+criteria_patient_info <- function(data) {
+  criteria_participant_id <- nchar(as.character(data$Participant_ID)) == 7
+  criteria_sex <- data$Sex %in% c("Male", "Female")
+  criteria_age <- data$Age >= 40
+  criteria_bmi <- !is.na(data$BMI) & data$BMI >= 15 & data$BMI <= 60
+  criteria_smoking <- data$Smoking_status %in% c("Never", "Previous", "Current", "Prefer not to answer")
+  criteria_disease <- data$Disease %in% c(1, 2)
+  
+  overall_criteria <- criteria_participant_id & criteria_sex & criteria_age & criteria_bmi & criteria_smoking & criteria_disease
+  
+  return(overall_criteria)
+}
+
+# Sanity check criteria for date
+criteria_date <- function(data) {
+  criteria_participant_id <- nchar(as.character(data$Participant_ID)) == 7
+  criteria_visit_date <- !is.na(data$VisitDate) & 
+                         as.Date(data$VisitDate, "%d/%m/%Y") >= as.Date("1950-01-01") & 
+                         as.Date(data$VisitDate, "%d/%m/%Y") <= as.Date("2023-12-31")
+  
+  overall_criteria <- criteria_participant_id & criteria_visit_date
+  
+  return(overall_criteria)
+}
+
+# Convert the VisitDate column to Date format in the date table
+date$VisitDate <- as.Date(date$VisitDate, "%d/%m/%Y")
+
+# Apply sanity check criteria to both data frames
+criteria_patient_info <- criteria_patient_info(patient_info_clean)
+criteria_date <- criteria_date(date)
+
+# Remove samples that do not pass the sanity check
+patient_info_clean <- patient_info_clean[criteria_patient_info, ]
+date_clean <- date[criteria_date, ]
+
+# Print the cleaned data
+print(patient_info_clean)
+print(date_clean)
+```
+
+```{r calculate_visits}
+# Calculate the number of visits each patient made since 1/1/2020. If the VisitDate is missing, it indicates no visits during this period.
+
+library(tidyverse)
+
+# Filter visits that occurred since 1/1/2020
+date_filtered <- date_clean %>%
+  filter(!is.na(VisitDate) & as.Date(VisitDate, "%d/%m/%Y") >= as.Date("2020-01-01"))
+
+# Count the number of visits each patient made since 1/1/2020
+visits_count <- date_filtered %>%
+  group_by(Participant_ID) %>%
+  summarize(Number_of_visits = n())
+
+# Display the result
+print(visits_count)
+```
+
+```{r summary_and_chart}
+# Create a summary table and/or chart showing the number of visits for each month (irrespective of the year).
+
+library(tidyverse)
+library(lubridate)
+
+# Extract the month from the VisitDate
+date_clean <- date_clean %>%
+  mutate(Month = month(VisitDate, label = TRUE, abbr = TRUE))
+
+# Summarize the number of visits for each month
+monthly_visits_summary <- date_clean %>%
+  group_by(Month) %>%
+  summarize(Number_of_visits = n())
+
+# Print the summary table
+print(monthly_visits_summary)
+
+# Create a bar chart showing the number of visits for each month
+ggplot(monthly_visits_summary, aes(x = Month, y = Number_of_visits)) +
+  geom_bar(stat = "identity", fill = "blue") +
+  labs(title = "Number of Visits for Each Month",
+       x = "Month",
+       y = "Number of Visits") +
+  theme_minimal()
+```
+
+```{r age_group}
+# add a new column "age group " to split the age to 5 categories:  40-49, 50-59, 60-69, and above 70)
+
+# Add a new column "age group" to the patient_info_clean data frame
+patient_info_clean <- patient_info_clean %>%
+  mutate(age_group = cut(Age, 
+                         breaks = c(39, 49, 59, 69, Inf), 
+                         labels = c("40-49", "50-59", "60-69", "70+"),
+                         right = TRUE))
+
+# Display the updated data frame with the new "age group" column
+print(patient_info_clean)
+```
+
+```{r merge}
+# Merge the two files to include the columns: Patient_ID, Sex, Age, BMI, Smoking_status, Number_of_visits, Disease and age group
+
+library(tidyverse)
+
+# Merge the patient_info_clean and visits_count data frames
+merged_data <- patient_info_clean %>%
+  left_join(visits_count, by = "Participant_ID")
+
+# Replace NA in visits_count with 0 for patients with no visits since 1/1/2020
+merged_data <- merged_data %>%
+  mutate(Number_of_visits = ifelse(is.na(Number_of_visits), 0, Number_of_visits))
+
+# Select the columns to include in the final merged data frame
+final_data <- merged_data %>%
+  select(Participant_ID, Sex, Age, BMI, Smoking_status, Number_of_visits, Disease, age_group)
+
+# Display the final merged data frame
+print(final_data)
+```
+
+```{r compare_BMI}
+# Compare the BMI between the healthy and control groups using a box or violin plot.
+
+library(tidyverse)
+
+# Create a boxplot to compare BMI between healthy and control groups
+ggplot(final_data, aes(x = as.factor(Disease), y = BMI)) +
+  geom_boxplot() +
+  labs(x = "Group (1 = Control, 2 = Healthy)", y = "BMI", title = "Comparison of BMI between Healthy and Control Groups") +
+  theme_minimal()
+
+# Create a violin plot to compare BMI between healthy and control groups
+ggplot(final_data, aes(x = as.factor(Disease), y = BMI)) +
+  geom_violin() +
+  labs(x = "Group (1 = Control, 2 = Healthy)", y = "BMI", title = "Comparison of BMI between Healthy and Control Groups") +
+  theme_minimal()
+
+# Comment: The statistics of both groups don't differ too much, but it can be observed, that healthy patients tend to have a slightly lower BMI than patients in the control group.
+```
+
+```{r proportion_smoking_status}
+# Examine if the proportion of smoking status differs between the healthy and control groups.
+
+# Create a cross-tabulation for smoking status and disease status
+smoking_vs_disease <- table(final_data$Smoking_status, final_data$Disease)
+
+# Perform Chi-Square Test
+chi_square_test <- chisq.test(smoking_vs_disease)
+
+# Print the cross-tabulation and Chi-Square Test
+print(smoking_vs_disease)
+print(chi_square_test)
+
+# Comment: The Chi-Square Test's p-value is 0,2185, which is greater than the typical significance level of 0,05. This indicates that there is no statistically significant difference in smoking status between the healthy and control groups. As can be observed, the number of healthy patients is always proportionate to the number of control group patients (roughly three times as high), across ALL smoking statuses, proving, that the proportion of smoking status does not differ significantly between the healthy and control groups.
+```
+
+```{r relationship_smoking_hospital}
+# Analyze the relationship between smoking status and the number of hospital visits, separately for the disease and healthy groups, and for the overall population.
+
+# ANOVA test for the relationship between smoking status and number of visits, separately for overall, healthy, and disease groups
+anova_results_overall <- aov(Number_of_visits ~ Smoking_status, data = final_data)
+anova_results_healthy <- aov(Number_of_visits ~ Smoking_status, data = filter(final_data, Disease == 2))
+anova_results_disease <- aov(Number_of_visits ~ Smoking_status, data = filter(final_data, Disease == 1))
+
+# Print the ANOVA results
+print(summary(anova_results_overall))
+print(summary(anova_results_healthy))
+print(summary(anova_results_disease))
+
+# Violin plot for the overall population
+plot_overall <- ggplot(final_data, aes(x = Smoking_status, y = Number_of_visits)) +
+  geom_violin(trim = FALSE) +
+  labs(title = "Number of Visits by Smoking Status (Overall Population)",
+       x = "Smoking Status", y = "Number of Visits") +
+  theme_minimal()
+
+# Violin plot for the healthy group
+plot_healthy <- ggplot(filter(final_data, Disease == 2), aes(x = Smoking_status, y = Number_of_visits)) +
+  geom_violin(trim = FALSE) +
+  labs(title = "Number of Visits by Smoking Status (Healthy Group)",
+       x = "Smoking Status", y = "Number of Visits") +
+  theme_minimal()
+
+# Violin plot for the disease group
+plot_disease <- ggplot(filter(final_data, Disease == 1), aes(x = Smoking_status, y = Number_of_visits)) +
+  geom_violin(trim = FALSE) +
+  labs(title = "Number of Visits by Smoking Status (Disease Group)",
+       x = "Smoking Status", y = "Number of Visits") +
+  theme_minimal()
+
+# Print the plots
+print(plot_overall)
+print(plot_healthy)
+print(plot_disease)
+
+# Comment: The conclusion based on the ANOVA test results is that there is no significant difference between the various smoking status groups in terms of the number of hospital visits, given the p-values obtained for each group (p > 0,05). Thus, there is insufficient evidence to reject the null hypothesis, suggesting that smoking status does not have a significant effect on the number of hospital visits. The violin plots also suggest the same, since they all look very similar, with the sole exception of the "Prefer not to answer"-plots, but those may be neglected, since there are only nine people in total, who chose not to answer.
+```
+
+```{r visits_disease_healthy}
+# Determine if the number of visits is higher in the disease group compared to the healthy group.
+
+library(tidyverse)
+
+# Summarize the number of visits for diseased and healthy patients
+visits_summary <- final_data %>%
+  group_by(Disease) %>%
+  summarize(
+    Patient_Count = n(),
+    Total_Visits = sum(Number_of_visits, na.rm = TRUE),
+    Average_Visits = mean(Number_of_visits, na.rm = TRUE)
+  )
+
+# Map Disease column to descriptive group names
+visits_summary <- visits_summary %>%
+  mutate(Group = ifelse(Disease == 1, "Disease", "Healthy")) %>%
+  select(Group, Patient_Count, Total_Visits, Average_Visits)
+
+# Print the final summary table
+print(visits_summary)
+
+# Comment: As can be observed, the number of average visits of both groups are almost identical. Showing, that the number of visits is not higher in the disease group compared to the healthy group.
+```
+
+```{r disease_prevalence}
+# Calculate the disease prevalence (number of sick  / total number population) across different age groups  in our dataset, and test if the prevalence is different across the group.
+
+library(tidyverse)
+
+# Define the age groups
+age_groups <- c("40-49", "50-59", "60-69", "70+")
+
+# Categorize individuals into age groups
+final_data <- final_data %>%
+  mutate(age_group = cut(Age, breaks = c(39, 49, 59, 69, Inf), labels = age_groups, include.lowest = TRUE))
+
+# Calculate the total number of individuals in each age group
+total_individuals <- final_data %>%
+  group_by(age_group) %>%
+  summarise(total_count = n())
+
+# Calculate the number of individuals with the disease in each age group
+disease_count <- final_data %>%
+  filter(Disease == 1) %>%
+  group_by(age_group) %>%
+  summarise(disease_count = n())
+
+# Join the total counts and disease counts
+prevalence_data <- total_individuals %>%
+  left_join(disease_count, by = "age_group") %>%
+  mutate(disease_count = ifelse(is.na(disease_count), 0, disease_count)) %>%
+  mutate(prevalence = disease_count / total_count)
+
+# Test if the prevalence is different across the age groups using a chi-square test
+chi_square_test <- chisq.test(prevalence_data$disease_count, prevalence_data$total_count)
+
+# Print the results
+print(prevalence_data)
+print(chi_square_test)
+
+# Comment: The Chi-Square Test's p-value is 0,2133, which is greater than the typical significance level of 0,05. This indicates that there is no statistically significant difference in disease prevalence across different age groups. As can be observed, the prevalence of the different age groups is always somewhere between 0,21 and 0,27, which is not that broad of a range for there to be a significant difference. Though it must be noted, that the number of patients in each age group is not equally divided, ranging from 35 to 1523, which is a huge difference, that may impact the overall results.
+```
+
